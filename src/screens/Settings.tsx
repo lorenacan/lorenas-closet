@@ -5,6 +5,7 @@ import { getSetting, setSetting, WEIGHTS_KEY } from '../db/db'
 import { exportBackup, importBackup, wipeAll } from '../db/backup'
 import { loadSampleWardrobe } from '../catalog/sample'
 import { toast } from '../ui/components'
+import { GithubSync } from './GithubSync'
 
 const LABELS: Record<keyof Weights, string> = {
   color: 'Compatibilidad cromática', style: 'Coherencia de estilo', silhouette: 'Capas y silueta', occasion: 'Ocasión y temporada',
@@ -79,7 +80,10 @@ export function Settings() {
       </div>
 
       <hr className="sep" />
-      <h3>Copia de seguridad</h3>
+      <GithubSync />
+
+      <hr className="sep" />
+      <h3>Copia de seguridad manual</h3>
       <p className="small muted" style={{ margin: '4px 0 12px' }}>
         Tus datos viven solo en este móvil. Descarga una copia de vez en cuando (sobre todo en iPhone, donde Safari puede borrar los datos de webs que no se usan).
       </p>
@@ -96,7 +100,7 @@ export function Settings() {
       </div>
 
       <hr className="sep" />
-      <button className="btn danger block" onClick={async () => { if (confirm('Se borrarán todas tus prendas, fotos y looks de este dispositivo. ¿Seguro?')) { await wipeAll(); toast('Datos borrados'); nav.tab({ name: 'closet' }) } }}>Borrar todos los datos</button>
+      <button className="btn danger block" onClick={async () => { if (confirm('Se borrarán todas tus prendas, fotos y looks de este móvil y se desconectará GitHub. Lo que ya esté guardado en tu repositorio no se toca. ¿Seguro?')) { await wipeAll(); toast('Datos borrados'); nav.tab({ name: 'closet' }) } }}>Borrar todos los datos</button>
       <p className="tiny muted" style={{ marginTop: 16, textAlign: 'center' }}>Lorena’s Closet · todo se procesa en tu dispositivo, sin IA externa.</p>
     </div>
   )

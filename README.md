@@ -28,3 +28,11 @@ Para instalarla en el móvil hay que servir `dist/` por **HTTPS** (Netlify, Verc
 
 Todo ocurre en el dispositivo. El recorte de fondo usa un modelo local (`@imgly/background-removal`): la foto no sale del móvil;
 solo se descarga el modelo la primera vez (~40-80 MB) y se cachea.
+
+## Copia automática en GitHub (opcional)
+
+En Ajustes → “Copia automática en GitHub” se conecta un repositorio **privado** de datos con un token de acceso limitado a ese repositorio
+(permiso `Contents: Read and write`). Cada cambio (fichas, fotos, recortes, looks, categorías) se sube en segundo plano y en un dispositivo nuevo
+se restaura todo conectando el mismo repositorio. Sincronización a tres bandas (local / GitHub / última versión sincronizada): los borrados solo se
+propagan si el elemento ya se había sincronizado, y en conflictos gana la edición más reciente. El token no entra en las copias ZIP ni se sube a GitHub.
+Código en `src/sync/` (con tests contra un GitHub simulado).
