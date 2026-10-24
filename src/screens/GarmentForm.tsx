@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Cropper } from '../ui/Cropper'
 import { useNav } from '../lib/router'
 import { blankGarment, deleteGarment, looksUsing, saveGarment, useCategories } from '../db/queries'
 import { db, type GarmentRecord } from '../db/db'
@@ -21,6 +22,7 @@ export function GarmentForm({ id, categoryId }: { id?: string; categoryId?: stri
   const [removeBg, setRemoveBg] = useState(true)
   const [saving, setSaving] = useState(false)
   const [autoColor, setAutoColor] = useState(false)
+  const [cropSrc, setCropSrc] = useState<Blob | null>(null)
   const camRef = useRef<HTMLInputElement>(null)
   const galRef = useRef<HTMLInputElement>(null)
 
@@ -37,8 +39,8 @@ export function GarmentForm({ id, categoryId }: { id?: string; categoryId?: stri
   if (!g || !cats.ready) return <div className="screen" />
   const set = (patch: Partial<GarmentRecord>) => setG({ ...g, ...patch })
 
-  async function onFile(f: File | undefined) {
-    if (!f) return
+  async function applyFile(f: Blob) {
+    setCropSrc(null)
     setFile(f)
     setPreview(URL.createObjectURL(f))
     if (!g!.colorHex) {
@@ -49,6 +51,11 @@ export function GarmentForm({ id, categoryId }: { id?: string; categoryId?: stri
         setAutoColor(true)
       }
     }
+  }
+
+  async function recropExisting() {
+    const p = g!.photoId ? await db.photos.get(g!.photoId) : undefined
+    if (p) setCropSrc(p.original)
   }
 
   const cinfo = g.colorHex ? classifyColor(g.colorHex) : null
@@ -94,6 +101,7 @@ export function GarmentForm({ id, categoryId }: { id?: string; categoryId?: stri
 
   return (
     <div className="screen">
+      {cropSrc && <Cropper file={cropSrc} onDone={(b) => void applyFile(b)} onSkip={() => void applyFile(cropSrc)} onCancel={() => setCropSrc(null)} />}
       <TopBar title={id ? 'Editar prenda' : 'Nueva prenda'} />
 
       <div className="photo-box">
@@ -103,9 +111,12 @@ export function GarmentForm({ id, categoryId }: { id?: string; categoryId?: stri
       <div className="row" style={{ marginTop: 10 }}>
         <button type="button" className="btn ghost sm" style={{ flex: 1 }} onClick={() => camRef.current?.click()}><span style={{ width: 18, height: 18, display: 'inline-flex' }}><IconCamera /></span> Hacer foto</button>
         <button type="button" className="btn ghost sm" style={{ flex: 1 }} onClick={() => galRef.current?.click()}><span style={{ width: 18, height: 18, display: 'inline-flex' }}><IconImage /></span> Galería</button>
-        <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void onFile(e.target.files?.[0]); e.target.value = '' }} />
-        <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => { void onFile(e.target.files?.[0]); e.target.value = '' }} />
+        <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropSrc(f); e.target.value = '' }} />
+        <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropSrc(f); e.target.value = '' }} />
       </div>
+      {(file || (id && g.photoId)) && (
+        <button type="button" className="btn ghost sm" style={{ marginTop: 10 }} onClick={() => (file ? setCropSrc(file) : void recropExisting())}>Recortar o girar la foto</button>
+      )}
       {(file || (id && !existing.cutout && g.photoId)) && (
         <div className="switch">
           <span className="small">Quitar el fondo (en tu móvil, sin enviar la foto)</span>
