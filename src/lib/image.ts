@@ -32,11 +32,64 @@ async function resize(src: ImageBitmap, max: number, type: string, quality?: num
 
 export interface ProcessedPhoto { original: Blob; thumb: Blob; width: number; height: number }
 
-/** Reduce la foto original (máx. 1400 px) y genera la miniatura (360 px). */
+/** Ganancia de exposición (>= 1): lleva el 98 % de la luz de la foto hacia casi blanco. Las fotos ya bien expuestas no cambian. */
+export function exposureGain(luma: ArrayLike<number>): number {
+  if (luma.length === 0) return 1
+  const hist = new Uint32Array(256)
+  for (let i = 0; i < luma.length; i++) hist[Math.max(0, Math.min(255, luma[i] | 0))]++
+  const goal = luma.length * 0.98
+  let acc = 0
+  let p98 = 255
+  for (let v = 0; v < 256; v++) {
+    acc += hist[v]
+    if (acc >= goal) { p98 = v; break }
+  }
+  return Math.min(1.3, Math.max(1, 248 / Math.max(p98, 1)))
+}
+
+export function exposureLut(gain: number, gamma = 0.92): Uint8Array {
+  const lut = new Uint8Array(256)
+  for (let i = 0; i < 256; i++) lut[i] = Math.min(255, Math.round(255 * Math.pow((i / 255) * gain, gamma)))
+  return lut
+}
+
+/** Corrige la exposición de un canvas (si hace falta) estimándola a partir de una versión pequeña. */
+function autoExposure(canvas: HTMLCanvasElement): void {
+  const k = 240 / Math.max(canvas.width, canvas.height)
+  const small = document.createElement('canvas')
+  small.width = Math.max(1, Math.round(canvas.width * k))
+  small.height = Math.max(1, Math.round(canvas.height * k))
+  const sctx = small.getContext('2d', { willReadFrequently: true })!
+  sctx.drawImage(canvas, 0, 0, small.width, small.height)
+  const d = sctx.getImageData(0, 0, small.width, small.height).data
+  const luma = new Uint8Array(d.length / 4)
+  for (let i = 0; i < luma.length; i++) luma[i] = 0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2]
+  const gain = exposureGain(luma)
+  if (gain < 1.02) return
+  const lut = exposureLut(gain)
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const px = img.data
+  for (let i = 0; i < px.length; i += 4) { px[i] = lut[px[i]]; px[i + 1] = lut[px[i + 1]]; px[i + 2] = lut[px[i + 2]] }
+  ctx.putImageData(img, 0, 0)
+}
+
+/** Reduce la foto original (máx. 1400 px), corrige la exposición y genera la miniatura (360 px). */
 export async function processPhoto(file: Blob): Promise<ProcessedPhoto> {
   const bmp = await load(file)
-  const original = await resize(bmp, 1400, 'image/jpeg', 0.86, true)
-  const thumb = await resize(bmp, 360, 'image/jpeg', 0.8, true)
+  const [w, h] = fit(bmp.width, bmp.height, 1400)
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const ctx = c.getContext('2d', { willReadFrequently: true })!
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, w, h)
+  ctx.drawImage(bmp, 0, 0, w, h)
+  autoExposure(c)
+  const original = await toBlob(c, 'image/jpeg', 0.88)
+  const thumbBmp = await createImageBitmap(c)
+  const thumb = await resize(thumbBmp, 360, 'image/jpeg', 0.8, true)
+  thumbBmp.close()
   const out = { original, thumb, width: bmp.width, height: bmp.height }
   bmp.close()
   return out
