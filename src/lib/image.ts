@@ -1,4 +1,4 @@
-import { cleanMask } from './cutoutClean'
+import { cleanMask, type CleanOptions } from './cutoutClean'
 
 /** Procesado de imágenes en el propio dispositivo (nada sale del móvil). */
 
@@ -99,9 +99,9 @@ export async function composeCutout(original: Blob, mask: Uint8Array, W: number,
 }
 
 /** Resultado del modelo de recorte -> máscara limpia -> prenda recortada. */
-export async function processCutout(modelOutput: Blob, original: Blob): Promise<{ cutout: Blob; thumb: Blob; box: CutBox }> {
+export async function processCutout(modelOutput: Blob, original: Blob, clean?: CleanOptions): Promise<{ cutout: Blob; thumb: Blob; box: CutBox }> {
   const { mask, w, h } = await maskFromBlob(modelOutput)
-  return composeCutout(original, cleanMask(mask, w, h), w, h)
+  return composeCutout(original, cleanMask(mask, w, h, clean), w, h)
 }
 
 /** Miniatura PNG (con transparencia) de una imagen ya recortada. */
