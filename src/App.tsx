@@ -10,6 +10,7 @@ import { LookDetail } from './screens/LookDetail'
 import { Looks } from './screens/Looks'
 import { Settings } from './screens/Settings'
 import { Categories } from './screens/Categories'
+import { Review } from './screens/Review'
 import { ToastHost } from './ui/components'
 import { IconGear, IconHanger, IconHeartNav, IconSpark } from './ui/icons'
 
@@ -20,7 +21,8 @@ function Screen({ route }: { route: Route }) {
     case 'looks': return <Looks />
     case 'settings': return <Settings />
     case 'garment': return <GarmentDetail id={route.id} />
-    case 'edit': return <GarmentForm key={route.id ?? 'new'} id={route.id} categoryId={route.categoryId} />
+    case 'edit': return <GarmentForm key={route.id ?? 'new'} id={route.id} categoryId={route.categoryId} fromReview={route.fromReview} />
+    case 'review': return <Review />
     case 'results': return <Results />
     case 'look': return <LookDetail key={route.signature} signature={route.signature} from={route.from} />
     case 'categories': return <Categories />

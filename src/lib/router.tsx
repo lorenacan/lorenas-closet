@@ -6,7 +6,8 @@ export type Route =
   | { name: 'looks' }
   | { name: 'settings' }
   | { name: 'garment'; id: string }
-  | { name: 'edit'; id?: string; categoryId?: string }
+  | { name: 'edit'; id?: string; categoryId?: string; fromReview?: boolean }
+  | { name: 'review' }
   | { name: 'results' }
   | { name: 'look'; signature: string; from: 'results' | 'saved' }
   | { name: 'categories' }

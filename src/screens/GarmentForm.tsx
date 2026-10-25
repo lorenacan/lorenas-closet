@@ -14,7 +14,7 @@ import { useCutout } from '../lib/cutout'
 import { FITS, FORMALITY, INSULATION, INTENSITIES, LENGTHS, LIGHTNESS, PATTERNS, SEASONS, STATUSES, TEMPS } from '../catalog/labels'
 import { STYLE_LABELS, STYLES, classifyColor, type Fit, type Intensity, type LengthLevel, type Lightness, type Pattern, type Season, type Temp } from '../engine'
 
-export function GarmentForm({ id, categoryId }: { id?: string; categoryId?: string }) {
+export function GarmentForm({ id, categoryId, fromReview }: { id?: string; categoryId?: string; fromReview?: boolean }) {
   const nav = useNav()
   const cats = useCategories()
   const [g, setG] = useState<GarmentRecord | null>(null)
@@ -65,7 +65,7 @@ export function GarmentForm({ id, categoryId }: { id?: string; categoryId?: stri
     if (!g!.categoryId) { toast('Elige una categoría'); return }
     setSaving(true)
     try {
-      await saveGarment(g!, file ?? undefined, removeBg)
+      await saveGarment(fromReview ? { ...g!, review: 'ok' } : g!, file ?? undefined, removeBg)
       toast(id ? 'Prenda actualizada' : 'Prenda guardada')
       nav.back()
     } catch (e) {

@@ -25,6 +25,8 @@ export interface GarmentRecord {
   status: string
   favorite: boolean
   notes?: string
+  /** 'pending' = rellenada automáticamente y a la espera de que la revises. */
+  review?: 'pending' | 'ok'
   wearCount: number
   lastWornAt?: number
   createdAt: number

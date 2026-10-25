@@ -8,7 +8,7 @@ export function GarmentCard({ g, subtitle, onOpen }: { g: GarmentRecord; subtitl
     <div className="card" style={{ cursor: 'pointer' }} onClick={onOpen} role="button">
       <div className="ph">
         <GarmentImg g={g} label={subtitle} />
-        {g.status !== 'closet' && <span className="badge">{label(STATUSES, g.status)}</span>}
+        {g.status !== 'closet' ? <span className="badge">{label(STATUSES, g.status)}</span> : g.review === 'pending' && <span className="badge" style={{ background: '#fff', color: '#0a0a0a', border: '1px solid #0a0a0a' }}>Por revisar</span>}
         <button
           className="fav" aria-label="Favorito"
           onClick={(e) => { e.stopPropagation(); void db.garments.update(g.id, { favorite: !g.favorite }) }}

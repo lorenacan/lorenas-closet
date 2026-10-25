@@ -8,6 +8,7 @@ import { IconPlus, IconSearch, IconSliders } from '../ui/icons'
 import { classifyColor, FAMILY_LABELS, STYLE_LABELS, STYLES } from '../engine'
 import { SEASONS, STATUSES } from '../catalog/labels'
 import { loadSampleWardrobe } from '../catalog/sample'
+import { reviewSession } from './Review'
 
 interface Filters { colors: string[]; styles: string[]; seasons: string[]; statuses: string[]; favOnly: boolean; sort: 'recent' | 'least' }
 const NO_FILTERS: Filters = { colors: [], styles: [], seasons: [], statuses: [], favOnly: false, sort: 'recent' }
@@ -52,6 +53,7 @@ export function Closet() {
     return out
   }, [garments, cats.list, cats.byId, cat, q, f])
 
+  const pending = garments?.filter((g) => g.review === 'pending').length ?? 0
   const activeCount = f.colors.length + f.styles.length + f.seasons.length + f.statuses.length + (f.favOnly ? 1 : 0) + (f.sort !== 'recent' ? 1 : 0)
 
   if (!garments || !cats.ready) return <div className="screen" />
@@ -71,6 +73,12 @@ export function Closet() {
         </div>
       ) : (
         <>
+          {pending > 0 && (
+            <button className="notice" style={{ width: '100%', textAlign: 'left', border: '1px solid var(--ink)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }} onClick={() => { reviewSession.total = pending; nav.push({ name: 'review' }) }}>
+              <span><b>{pending} {pending === 1 ? 'prenda' : 'prendas'} por revisar</b><br /><span className="small muted">Confirma que los datos están bien, una a una</span></span>
+              <b>Revisar ›</b>
+            </button>
+          )}
           <div className="row" style={{ marginBottom: 12 }}>
             <div className="search grow" style={{ flex: 1 }}>
               <IconSearch />
