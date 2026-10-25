@@ -130,4 +130,48 @@ describe('sincronización con GitHub', () => {
     expect([...gh.files().keys()].some((p) => p.includes('sync') || p.includes('token'))).toBe(false)
     expect(await db.settings.get(MANIFEST_KEY)).toBeDefined()
   })
+
+  it('un recorte retocado se vuelve a subir (y la zona de retoque con él)', async () => {
+    const gh = fakeGithub()
+    const box = { x: 1, y: 2, w: 3, h: 4, W: 10, H: 10 }
+    await db.photos.put({ id: 'p1', original: photo('ORIG'), cutout: new Blob(['CUT1']), width: 1, height: 1, cutBox: box })
+    await db.thumbs.put({ id: 'p1', blob: photo('T'), cutout: true, rev: 1 })
+    await db.garments.put(garment('g1', { photoId: 'p1' }))
+    await syncOnce(mk(gh))
+    expect(gh.read('photos/p1.cut.png')).toBe('CUT1')
+    expect(JSON.parse(gh.read('photos/p1.cut.json')!)).toEqual(box)
+
+    const before = gh.commitCount()
+    expect((await syncOnce(mk(gh))).uploaded).toBe(0)
+    expect(gh.commitCount()).toBe(before)
+
+    // retoque: nuevo recorte y revisión +1
+    await db.photos.update('p1', { cutout: new Blob(['CUT2']) })
+    await db.thumbs.put({ id: 'p1', blob: photo('T2'), cutout: true, rev: 2 })
+    await syncOnce(mk(gh))
+    expect(gh.read('photos/p1.cut.png')).toBe('CUT2')
+    expect((await syncOnce(mk(gh))).uploaded).toBe(0)
+  })
+
+  it('otro dispositivo recibe el recorte retocado y su zona de retoque', async () => {
+    const gh = fakeGithub()
+    const box = { x: 1, y: 2, w: 3, h: 4, W: 10, H: 10 }
+    await db.photos.put({ id: 'p1', original: photo('ORIG'), cutout: new Blob(['CUT1']), width: 1, height: 1, cutBox: box })
+    await db.thumbs.put({ id: 'p1', blob: photo('T'), cutout: true, rev: 1 })
+    await db.garments.put(garment('g1', { photoId: 'p1' }))
+    await syncOnce(mk(gh))
+
+    await wipeLocal() // móvil B
+    await ensureSeed()
+    await syncOnce(mk(gh))
+    expect(await (await db.photos.get('p1'))!.cutout!.text()).toBe('CUT1')
+    expect((await db.photos.get('p1'))!.cutBox).toEqual(box)
+
+    // el móvil A retoca y sube
+    const api = new GitHubApi('o/r', 't', { fetch: gh.fetch, sleep: async () => {} })
+    const sha = await api.createBlob(new TextEncoder().encode('CUT2'))
+    await api.commit(await api.ensureHead(), [{ path: 'photos/p1.cut.png', sha }], 'retoque')
+    await syncOnce(mk(gh))
+    expect(await (await db.photos.get('p1'))!.cutout!.text()).toBe('CUT2')
+  })
 })

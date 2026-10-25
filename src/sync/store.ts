@@ -3,7 +3,7 @@ import { db, getSetting, setSetting } from '../db/db'
 import { GitHubApi, GitHubError } from './github'
 import { MANIFEST_KEY, syncOnce } from './engine'
 import { syncGuard } from './guard'
-import { processCutout, processPhoto } from '../lib/image'
+import { processPhoto, thumbFromCutout } from '../lib/image'
 
 const CONFIG_KEY = 'sync'
 const DEBOUNCE_MS = 8000
@@ -46,7 +46,7 @@ export async function syncNow(): Promise<void> {
   try {
     await syncOnce({
       api: makeApi(config),
-      makeThumb: async (blob, isCutout) => (isCutout ? (await processCutout(blob)).thumb : (await processPhoto(blob)).thumb),
+      makeThumb: async (blob, isCutout) => (isCutout ? thumbFromCutout(blob) : (await processPhoto(blob)).thumb),
       onProgress: (message, done, total) => emit({ message, done, total }),
     })
     const next = { ...config, lastSync: Date.now() }

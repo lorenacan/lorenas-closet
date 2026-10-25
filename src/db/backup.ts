@@ -1,7 +1,7 @@
 import { strToU8, strFromU8, unzipSync, zipSync, type Zippable } from 'fflate'
 import { db, type GarmentRecord, type LookRecord, type SettingRow } from './db'
 import type { Category } from '../catalog/categories'
-import { processCutout, processPhoto } from '../lib/image'
+import { processPhoto, thumbFromCutout, type CutBox } from '../lib/image'
 import { MANIFEST_KEY, SYNC_KEYS } from '../sync/engine'
 import { withoutSync } from '../sync/guard'
 import { disconnectSync, scheduleSync } from '../sync/store'
@@ -15,7 +15,7 @@ interface Dump {
   looks: LookRecord[]
   categories: Category[]
   settings: SettingRow[]
-  photos: { id: string; width: number; height: number; hasCutout: boolean }[]
+  photos: { id: string; width: number; height: number; hasCutout: boolean; cutBox?: CutBox }[]
 }
 
 /** Copia de seguridad completa en un ZIP: datos (JSON) + fotos originales y recortes. */
@@ -31,7 +31,7 @@ export async function exportBackup(): Promise<Blob> {
   }
   const dump: Dump = {
     version: 1, exportedAt: new Date().toISOString(), garments, looks, categories, settings: settings.filter((x) => !SYNC_KEYS.includes(x.key)),
-    photos: photos.map((p) => ({ id: p.id, width: p.width, height: p.height, hasCutout: !!p.cutout })),
+    photos: photos.map((p) => ({ id: p.id, width: p.width, height: p.height, hasCutout: !!p.cutout, cutBox: p.cutBox })),
   }
   files['data.json'] = strToU8(JSON.stringify(dump))
   return new Blob([zipSync(files) as BlobPart], { type: 'application/zip' })
@@ -63,9 +63,9 @@ export async function importBackup(file: Blob): Promise<number> {
       const cutRaw = p.hasCutout ? zip[`photos/${p.id}.cut.png`] : undefined
       if (cutRaw) {
         const cutBlob = new Blob([cutRaw as BlobPart], { type: 'image/png' })
-        const { thumb } = await processCutout(cutBlob)
-        await db.photos.put({ id: p.id, original: origBlob, cutout: cutBlob, width: p.width, height: p.height })
-        await db.thumbs.put({ id: p.id, blob: thumb, cutout: true })
+        const thumb = await thumbFromCutout(cutBlob)
+        await db.photos.put({ id: p.id, original: origBlob, cutout: cutBlob, width: p.width, height: p.height, cutBox: p.cutBox })
+        await db.thumbs.put({ id: p.id, blob: thumb, cutout: true, rev: 1 })
       } else {
         await db.photos.put({ id: p.id, original: origBlob, width: p.width, height: p.height })
         await db.thumbs.put({ id: p.id, blob: base.thumb, cutout: false })

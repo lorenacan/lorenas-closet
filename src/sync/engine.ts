@@ -59,7 +59,7 @@ async function localSnapshot() {
   return { files, lookSig, garmentIds }
 }
 
-const photoIdOf = (path: string) => /^photos\/(.+?)(\.cut\.png|\.jpg)$/.exec(path)?.[1]
+const photoIdOf = (path: string) => /^photos\/(.+?)(\.cut\.png|\.cut\.json|\.jpg)$/.exec(path)?.[1]
 
 export async function syncOnce(deps: SyncDeps): Promise<SyncResult> {
   const { api, onProgress } = deps
@@ -126,64 +126,81 @@ export async function syncOnce(deps: SyncDeps): Promise<SyncResult> {
   // 2) Fotos: traer las que faltan, y calcular cuáles subir o borrar
   const garments = await db.garments.toArray()
   const referenced = new Set(garments.map((g) => g.photoId).filter((x): x is string => !!x))
-  const remotePhotos = new Map<string, { jpg?: string; cut?: string }>()
+  const remotePhotos = new Map<string, { jpg?: string; cut?: string; box?: string }>()
   for (const [p, sha] of remoteAll) {
     const id = photoIdOf(p)
     if (!id) continue
     const e = remotePhotos.get(id) ?? {}
     if (p.endsWith('.cut.png')) e.cut = sha
+    else if (p.endsWith('.cut.json')) e.box = sha
     else e.jpg = sha
     remotePhotos.set(id, e)
   }
-  const localPhotos = new Map<string, boolean>()
-  await db.thumbs.each((t) => { localPhotos.set(t.id, t.cutout) })
+  const localPhotos = new Map<string, { cut: boolean; rev: number }>()
+  await db.thumbs.each((t) => { localPhotos.set(t.id, { cut: t.cutout, rev: t.rev ?? 0 }) })
+  const revKey = (id: string) => `rev:${id}`
+  const syncedRev = (id: string) => Number(newManifest[revKey(id)] ?? 0)
+
+  /** Trae el recorte (y su zona de retoque) de GitHub y actualiza la miniatura. */
+  const pullCut = async (id: string, r: { cut?: string; box?: string }, rev: number) => {
+    const cutout = new Blob([await api.getBlob(r.cut!) as BlobPart], { type: 'image/png' })
+    const cutBox = r.box ? JSON.parse(dec.decode(await api.getBlob(r.box))) : undefined
+    await db.photos.update(id, { cutout, cutBox })
+    await db.thumbs.put({ id, blob: await deps.makeThumb(cutout, true), cutout: true, rev })
+    localPhotos.set(id, { cut: true, rev })
+    newManifest[`photos/${id}.cut.png`] = r.cut!
+    if (r.box) newManifest[`photos/${id}.cut.json`] = r.box
+    newManifest[revKey(id)] = String(rev)
+    result.pulled++
+  }
 
   await withoutSync(async () => {
     for (const id of referenced) {
       const r = remotePhotos.get(id)
       if (!r) continue
-      const has = localPhotos.has(id)
-      if (!has && r.jpg) {
+      const local = localPhotos.get(id)
+      if (!local && r.jpg) {
         onProgress?.('Descargando fotos…')
         const original = new Blob([await api.getBlob(r.jpg) as BlobPart], { type: 'image/jpeg' })
-        const cutout = r.cut ? new Blob([await api.getBlob(r.cut) as BlobPart], { type: 'image/png' }) : undefined
-        const thumb = await deps.makeThumb(cutout ?? original, !!cutout)
-        await db.photos.put({ id, original, cutout, width: 0, height: 0 })
-        await db.thumbs.put({ id, blob: thumb, cutout: !!cutout })
-        localPhotos.set(id, !!cutout)
+        await db.photos.put({ id, original, width: 0, height: 0 })
+        await db.thumbs.put({ id, blob: await deps.makeThumb(original, false), cutout: false, rev: 0 })
+        localPhotos.set(id, { cut: false, rev: 0 })
         newManifest[`photos/${id}.jpg`] = r.jpg
-        if (r.cut) newManifest[`photos/${id}.cut.png`] = r.cut
         result.pulled++
-      } else if (has && !localPhotos.get(id) && r.cut) {
-        const cutout = new Blob([await api.getBlob(r.cut) as BlobPart], { type: 'image/png' })
-        await db.photos.update(id, { cutout })
-        await db.thumbs.put({ id, blob: await deps.makeThumb(cutout, true), cutout: true })
-        localPhotos.set(id, true)
-        newManifest[`photos/${id}.cut.png`] = r.cut
-        result.pulled++
+        if (r.cut) await pullCut(id, r, 0)
+      } else if (local && r.cut) {
+        const changedHere = local.rev > syncedRev(id)
+        const changedThere = newManifest[`photos/${id}.cut.png`] !== undefined && newManifest[`photos/${id}.cut.png`] !== r.cut
+        if (!local.cut || (!changedHere && changedThere)) await pullCut(id, r, local.rev)
       }
     }
   })
 
   // 3) Subidas (fotos primero, luego datos) y borrados remotos, en lotes con un commit cada uno
-  interface Job { path: string; load: () => Promise<Uint8Array> }
+  interface Job { path: string; load: () => Promise<Uint8Array>; after?: () => void }
   const jobs: Job[] = []
   const bytesOf = async (b: Blob) => new Uint8Array(await b.arrayBuffer())
-  for (const [id, hasCut] of localPhotos) {
+  for (const [id, lp] of localPhotos) {
     const r = remotePhotos.get(id)
     if (!referenced.has(id) && !removedPhotoIds.has(id)) continue
-    if (!r?.jpg && !removedPhotoIds.has(id)) jobs.push({ path: `photos/${id}.jpg`, load: async () => bytesOf((await db.photos.get(id))!.original) })
-    if (hasCut && !r?.cut && !removedPhotoIds.has(id)) jobs.push({ path: `photos/${id}.cut.png`, load: async () => bytesOf((await db.photos.get(id))!.cutout!) })
+    if (removedPhotoIds.has(id)) continue
+    if (!r?.jpg) jobs.push({ path: `photos/${id}.jpg`, load: async () => bytesOf((await db.photos.get(id))!.original) })
+    if (lp.cut && (!r?.cut || lp.rev > syncedRev(id))) {
+      jobs.push({ path: `photos/${id}.cut.png`, load: async () => bytesOf((await db.photos.get(id))!.cutout!), after: () => { newManifest[revKey(id)] = String(lp.rev) } })
+      const box = (await db.photos.get(id))?.cutBox
+      if (box) jobs.push({ path: `photos/${id}.cut.json`, load: async () => enc.encode(JSON.stringify(box)) })
+    }
   }
   for (const p of upload) jobs.push({ path: p, load: async () => snap.files.get(p)!.bytes })
 
   const deletions: string[] = [...plan.deleteRemote]
   for (const [id, r] of remotePhotos) {
     if (referenced.has(id)) continue
-    for (const [ext, sha] of [['.jpg', r.jpg], ['.cut.png', r.cut]] as const) {
+    for (const [ext, sha] of [['.jpg', r.jpg], ['.cut.png', r.cut], ['.cut.json', r.box]] as const) {
       const p = `photos/${id}${ext}`
       if (sha && newManifest[p] !== undefined) deletions.push(p)
     }
+    delete newManifest[revKey(id)]
   }
   for (const id of removedPhotoIds) {
     await db.photos.delete(id)
@@ -210,6 +227,7 @@ export async function syncOnce(deps: SyncDeps): Promise<SyncResult> {
       if (ch.sha === null) { delete newManifest[ch.path]; result.deleted++ }
       else { newManifest[ch.path] = ch.sha; result.uploaded++ }
     }
+    for (const job of chunks[c]) job.after?.()
     await persist()
   }
   await persist()

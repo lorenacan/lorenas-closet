@@ -31,8 +31,11 @@ export interface GarmentRecord {
   updatedAt: number
 }
 
-export interface PhotoRecord { id: string; original: Blob; cutout?: Blob; width: number; height: number }
-export interface ThumbRecord { id: string; blob: Blob; cutout: boolean }
+import type { CutBox } from '../lib/image'
+
+export interface PhotoRecord { id: string; original: Blob; cutout?: Blob; width: number; height: number; /** Zona recortada en coordenadas de la original (para retocar). */ cutBox?: CutBox }
+/** `rev` sube cada vez que cambia el recorte (lo usa la sincronización). */
+export interface ThumbRecord { id: string; blob: Blob; cutout: boolean; rev?: number }
 
 export type LookStatus = 'saved' | 'favorite' | 'discarded'
 export interface LookRecord {

@@ -1,3 +1,5 @@
+import { cleanMask } from './cutoutClean'
+
 /** Procesado de imágenes en el propio dispositivo (nada sale del móvil). */
 
 function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
@@ -40,19 +42,42 @@ export async function processPhoto(file: Blob): Promise<ProcessedPhoto> {
   return out
 }
 
-/** Recorta los bordes transparentes, reduce el tamaño y devuelve PNG (grande y miniatura). */
-export async function processCutout(png: Blob): Promise<{ cutout: Blob; thumb: Blob }> {
-  const bmp = await load(png)
+export interface CutBox { x: number; y: number; w: number; h: number; W: number; H: number }
+
+/** Alfa de una imagen (p. ej. la que devuelve el modelo de recorte) como máscara 0..255. */
+export async function maskFromBlob(blob: Blob): Promise<{ mask: Uint8Array; w: number; h: number }> {
+  const bmp = await load(blob)
   const c = document.createElement('canvas')
   c.width = bmp.width
   c.height = bmp.height
   const ctx = c.getContext('2d', { willReadFrequently: true })!
   ctx.drawImage(bmp, 0, 0)
+  bmp.close()
   const { data, width, height } = ctx.getImageData(0, 0, c.width, c.height)
-  let minX = width, minY = height, maxX = 0, maxY = 0
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (data[(y * width + x) * 4 + 3] > 16) {
+  const mask = new Uint8Array(width * height)
+  for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3]
+  return { mask, w: width, h: height }
+}
+
+/**
+ * Compone la prenda recortada: colores de la foto original + máscara. Recorta los bordes vacíos y reduce el tamaño.
+ * `box` es la zona recortada en coordenadas de la foto original (sirve para retocar después).
+ */
+export async function composeCutout(original: Blob, mask: Uint8Array, W: number, H: number): Promise<{ cutout: Blob; thumb: Blob; box: CutBox }> {
+  const bmp = await load(original)
+  const c = document.createElement('canvas')
+  c.width = W
+  c.height = H
+  const ctx = c.getContext('2d', { willReadFrequently: true })!
+  ctx.drawImage(bmp, 0, 0, W, H)
+  bmp.close()
+  const img = ctx.getImageData(0, 0, W, H)
+  let minX = W, minY = H, maxX = 0, maxY = 0
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const a = mask[y * W + x]
+      img.data[(y * W + x) * 4 + 3] = a
+      if (a > 16) {
         if (x < minX) minX = x
         if (x > maxX) maxX = x
         if (y < minY) minY = y
@@ -60,17 +85,31 @@ export async function processCutout(png: Blob): Promise<{ cutout: Blob; thumb: B
       }
     }
   }
-  if (maxX <= minX || maxY <= minY) { minX = 0; minY = 0; maxX = width - 1; maxY = height - 1 }
+  if (maxX <= minX || maxY <= minY) { minX = 0; minY = 0; maxX = W - 1; maxY = H - 1 }
   const pad = Math.round(Math.max(maxX - minX, maxY - minY) * 0.02)
   minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad)
-  maxX = Math.min(width - 1, maxX + pad); maxY = Math.min(height - 1, maxY + pad)
-  const cw = maxX - minX + 1, ch = maxY - minY + 1
-  const crop = await createImageBitmap(c, minX, minY, cw, ch)
+  maxX = Math.min(W - 1, maxX + pad); maxY = Math.min(H - 1, maxY + pad)
+  const box: CutBox = { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1, W, H }
+  ctx.putImageData(img, 0, 0)
+  const crop = await createImageBitmap(c, box.x, box.y, box.w, box.h)
   const cutout = await resize(crop, 900, 'image/png')
   const thumb = await resize(crop, 360, 'image/png')
   crop.close()
+  return { cutout, thumb, box }
+}
+
+/** Resultado del modelo de recorte -> máscara limpia -> prenda recortada. */
+export async function processCutout(modelOutput: Blob, original: Blob): Promise<{ cutout: Blob; thumb: Blob; box: CutBox }> {
+  const { mask, w, h } = await maskFromBlob(modelOutput)
+  return composeCutout(original, cleanMask(mask, w, h), w, h)
+}
+
+/** Miniatura PNG (con transparencia) de una imagen ya recortada. */
+export async function thumbFromCutout(png: Blob): Promise<Blob> {
+  const bmp = await load(png)
+  const t = await resize(bmp, 360, 'image/png')
   bmp.close()
-  return { cutout, thumb }
+  return t
 }
 
 /** Color dominante aproximado (hex) del centro de la imagen, ignorando píxeles transparentes. */

@@ -11,6 +11,7 @@ import { FITS, FORMALITY, INSULATION, LENGTHS, PATTERNS, SEASONS, STATUSES, labe
 import { STYLE_LABELS, classifyColor, FAMILY_LABELS } from '../engine'
 import { colorSummary } from '../ui/pickers'
 import { setRequest } from '../lib/genStore'
+import { RetouchButton } from '../ui/RetouchButton'
 
 export function GarmentDetail({ id }: { id: string }) {
   const nav = useNav()
@@ -51,6 +52,9 @@ export function GarmentDetail({ id }: { id: string }) {
         {photo.url ? <img src={photo.url} alt="" className={photo.cutout ? '' : 'flat'} /> : <div className="tile" style={{ width: '70%', height: '70%', background: g.colorHex ?? '#e6e6e6' }} />}
         {state === 'pending' && <div className="ov"><span className="spinner" /> Quitando fondo…</div>}
       </div>
+      {g.photoId && photo.cutout && state !== 'pending' && (
+        <div style={{ marginTop: 10 }}><RetouchButton photoId={g.photoId} /></div>
+      )}
       {g.photoId && !photo.cutout && state !== 'pending' && (
         <div style={{ marginTop: 10 }}>
           <button className="btn ghost sm" onClick={() => { queueCutout(g.photoId!); toast('Quitando el fondo…') }}>Quitar el fondo</button>

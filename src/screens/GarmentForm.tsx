@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Cropper } from '../ui/Cropper'
+import { RetouchButton } from '../ui/RetouchButton'
 import { useNav } from '../lib/router'
 import { blankGarment, deleteGarment, looksUsing, saveGarment, useCategories } from '../db/queries'
 import { db, type GarmentRecord } from '../db/db'
@@ -114,6 +115,7 @@ export function GarmentForm({ id, categoryId }: { id?: string; categoryId?: stri
         <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropSrc(f); e.target.value = '' }} />
         <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropSrc(f); e.target.value = '' }} />
       </div>
+      {id && g.photoId && !file && existing.cutout && <div style={{ marginTop: 10 }}><RetouchButton photoId={g.photoId} /></div>}
       {(file || (id && g.photoId)) && (
         <button type="button" className="btn ghost sm" style={{ marginTop: 10 }} onClick={() => (file ? setCropSrc(file) : void recropExisting())}>Recortar o girar la foto</button>
       )}
